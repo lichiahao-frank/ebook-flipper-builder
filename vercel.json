@@ -1,0 +1,6 @@
+{
+  "functions": {
+    "api/deploy.js": { "maxDuration": 60 },
+    "api/status.js":  { "maxDuration": 15 }
+  }
+}

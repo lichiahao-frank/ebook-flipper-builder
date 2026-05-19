@@ -1,0 +1,14 @@
+{
+  "name": "ebook-builder",
+  "version": "1.0.0",
+  "description": "電子書翻閱器生成工具",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "formidable": "^2.1.5",
+    "multer": "^2.1.1"
+  }
+}
