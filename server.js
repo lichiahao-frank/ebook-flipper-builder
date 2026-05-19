@@ -25,8 +25,8 @@ const upload = multer({
 function getVercelAuth() {
   if (process.env.VERCEL_DEPLOY_TOKEN) {
     return {
-      token:  process.env.VERCEL_DEPLOY_TOKEN,
-      teamId: process.env.VERCEL_DEPLOY_TEAM_ID || null,
+      token:  process.env.VERCEL_DEPLOY_TOKEN.trim(),
+      teamId: process.env.VERCEL_DEPLOY_TEAM_ID?.trim() || null,
     };
   }
   const base = path.join(os.homedir(), 'Library', 'Application Support', 'com.vercel.cli');
@@ -126,7 +126,7 @@ app.post('/api/deploy', upload.array('images'), async (req, res) => {
     ]);
 
     console.log('  🚀 建立 deployment…');
-    const qs = teamId ? `?teamId=${teamId}` : '';
+    const qs = teamId ? `?teamId=${encodeURIComponent(teamId)}` : '';
     const { status, data } = await vercelAPI('POST', `/v13/deployments${qs}`, {
       name: projectName,
       files: uploadResults,
@@ -154,7 +154,7 @@ app.get('/api/status', async (req, res) => {
   const { token, teamId } = auth;
 
   try {
-    const qs = teamId ? `?teamId=${teamId}` : '';
+    const qs = teamId ? `?teamId=${encodeURIComponent(teamId)}` : '';
     const { data } = await vercelAPI('GET', `/v13/deployments/${id}${qs}`, null, token);
     console.log(`  state: ${data.readyState}`);
 

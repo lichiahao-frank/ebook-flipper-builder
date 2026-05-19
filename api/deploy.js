@@ -11,8 +11,8 @@ const { flipbookHTML, slugify } = require('../lib/template');
 function getAuth() {
   if (process.env.VERCEL_DEPLOY_TOKEN) {
     return {
-      token:  process.env.VERCEL_DEPLOY_TOKEN,
-      teamId: process.env.VERCEL_DEPLOY_TEAM_ID || null,
+      token:  process.env.VERCEL_DEPLOY_TOKEN.trim(),
+      teamId: process.env.VERCEL_DEPLOY_TEAM_ID?.trim() || null,
     };
   }
   const base = path.join(os.homedir(), 'Library', 'Application Support', 'com.vercel.cli');
@@ -53,7 +53,7 @@ function vercelAPI(method, apiPath, payload, token) {
 
 async function uploadFile(buffer, token, teamId) {
   const sha = crypto.createHash('sha1').update(buffer).digest('hex');
-  const qs  = teamId ? `?teamId=${teamId}` : '';
+  const qs  = teamId ? `?teamId=${encodeURIComponent(teamId)}` : '';
   const status = await new Promise((resolve, reject) => {
     const r = https.request({
       hostname: 'api.vercel.com',

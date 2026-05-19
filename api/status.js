@@ -8,8 +8,8 @@ const fs    = require('fs');
 function getAuth() {
   if (process.env.VERCEL_DEPLOY_TOKEN) {
     return {
-      token:  process.env.VERCEL_DEPLOY_TOKEN,
-      teamId: process.env.VERCEL_DEPLOY_TEAM_ID || null,
+      token:  process.env.VERCEL_DEPLOY_TOKEN.trim(),
+      teamId: process.env.VERCEL_DEPLOY_TEAM_ID?.trim() || null,
     };
   }
   const base = path.join(os.homedir(), 'Library', 'Application Support', 'com.vercel.cli');
@@ -50,7 +50,7 @@ module.exports = async function handler(req, res) {
   if (!auth?.token) return res.status(500).json({ error: '找不到 Vercel token' });
   const { token, teamId } = auth;
 
-  const qs = teamId ? `?teamId=${teamId}` : '';
+  const qs = teamId ? `?teamId=${encodeURIComponent(teamId)}` : '';
   const { data } = await vercelAPI('GET', `/v13/deployments/${deployId}${qs}`, token);
 
   if (data.readyState === 'READY') {
