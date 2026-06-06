@@ -6,7 +6,7 @@ const os         = require('os');
 const path       = require('path');
 const fs         = require('fs');
 const formidable = require('formidable');
-const { flipbookHTML, slugify } = require('../lib/template');
+const { flipbookHTML, slugify, oembedJSON } = require('../lib/template');
 
 function getAuth() {
   if (process.env.VERCEL_DEPLOY_TOKEN) {
@@ -69,6 +69,9 @@ async function uploadFile(buffer, token, teamId) {
     r.write(buffer);
     r.end();
   });
+  if (status === 401 || status === 403) {
+    throw new Error(`Vercel token 已失效或權限不足 (HTTP ${status})，請更新 VERCEL_DEPLOY_TOKEN 環境變數（到 vercel.com/account/tokens 重新產生，scope 選對 team）`);
+  }
   if (status !== 200 && status !== 409) throw new Error(`File upload failed (HTTP ${status})`);
   return { sha, size: buffer.length };
 }
@@ -96,6 +99,7 @@ async function handler(req, res) {
 
   const nameField   = Array.isArray(fields.name) ? fields.name[0] : (fields.name || '');
   const projectName = slugify(nameField) || `ebook-${Date.now()}`;
+  const baseUrl     = 'https://' + projectName + '.vercel.app';
 
   try {
     const imageFilenames = imageFiles.map((f, i) => {
@@ -109,10 +113,12 @@ async function handler(req, res) {
         { key: 'Content-Security-Policy', value: 'frame-ancestors *' },
       ]}],
     }));
-    const htmlBuf = Buffer.from(flipbookHTML(imageFilenames));
+    const htmlBuf   = Buffer.from(flipbookHTML(imageFilenames, baseUrl));
+    const oembedBuf = Buffer.from(oembedJSON(baseUrl, imageFilenames[0]));
 
     const uploadResults = await Promise.all([
       uploadFile(htmlBuf,       token, teamId).then(r => ({ file: 'index.html',  ...r })),
+      uploadFile(oembedBuf,     token, teamId).then(r => ({ file: 'oembed.json', ...r })),
       uploadFile(vercelJsonBuf, token, teamId).then(r => ({ file: 'vercel.json', ...r })),
       ...imageFiles.map((f, i) =>
         uploadFile(fs.readFileSync(f.filepath), token, teamId)
@@ -128,6 +134,9 @@ async function handler(req, res) {
       projectSettings: { framework: null, buildCommand: null, outputDirectory: null, installCommand: null },
     }, token);
 
+    if (status === 401 || status === 403) {
+      throw new Error(`Vercel token 已失效或權限不足 (HTTP ${status})，請更新 VERCEL_DEPLOY_TOKEN 環境變數`);
+    }
     if (status >= 400) throw new Error(`Deployment failed (${status}): ${JSON.stringify(data)}`);
     res.json({ success: true, deployId: data.id });
 

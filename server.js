@@ -8,7 +8,7 @@ const os       = require('os');
 const crypto   = require('crypto');
 const https    = require('https');
 const { exec } = require('child_process');
-const { flipbookHTML, slugify } = require('./lib/template');
+const { flipbookHTML, slugify, oembedJSON } = require('./lib/template');
 
 const app  = express();
 const PORT = 3456;
@@ -85,6 +85,9 @@ async function uploadFile(buffer, token, teamId) {
     r.write(buffer);
     r.end();
   });
+  if (status === 401 || status === 403) {
+    throw new Error(`Vercel token 已失效或權限不足 (HTTP ${status})，請重新執行 vercel login 或更新 VERCEL_DEPLOY_TOKEN`);
+  }
   if (status !== 200 && status !== 409) throw new Error(`File upload failed (HTTP ${status})`);
   return { sha, size: buffer.length };
 }
@@ -99,6 +102,7 @@ app.post('/api/deploy', upload.array('images'), async (req, res) => {
   const { token, teamId } = auth;
 
   const projectName = slugify(req.body.name) || `ebook-${Date.now()}`;
+  const baseUrl     = 'https://' + projectName + '.vercel.app';
 
   try {
     console.log(`\n📚 部署「${projectName}」，共 ${files.length} 張圖片`);
@@ -114,11 +118,13 @@ app.post('/api/deploy', upload.array('images'), async (req, res) => {
         { key: 'Content-Security-Policy', value: 'frame-ancestors *' },
       ]}],
     }));
-    const htmlBuf = Buffer.from(flipbookHTML(imageFilenames));
+    const htmlBuf   = Buffer.from(flipbookHTML(imageFilenames, baseUrl));
+    const oembedBuf = Buffer.from(oembedJSON(baseUrl, imageFilenames[0]));
 
     console.log('  📤 上傳檔案中…');
     const uploadResults = await Promise.all([
       uploadFile(htmlBuf,       token, teamId).then(r => ({ file: 'index.html',  ...r })),
+      uploadFile(oembedBuf,     token, teamId).then(r => ({ file: 'oembed.json', ...r })),
       uploadFile(vercelJsonBuf, token, teamId).then(r => ({ file: 'vercel.json', ...r })),
       ...files.map((f, i) =>
         uploadFile(f.buffer, token, teamId).then(r => ({ file: imageFilenames[i], ...r }))
@@ -134,6 +140,9 @@ app.post('/api/deploy', upload.array('images'), async (req, res) => {
       projectSettings: { framework: null, buildCommand: null, outputDirectory: null, installCommand: null },
     }, token);
 
+    if (status === 401 || status === 403) {
+      throw new Error(`Vercel token 已失效或權限不足 (HTTP ${status})，請重新執行 vercel login 或更新 VERCEL_DEPLOY_TOKEN`);
+    }
     if (status >= 400) throw new Error(`Deployment failed (${status}): ${JSON.stringify(data)}`);
     console.log(`  ⏳ Deployment ${data.id} 建立中…`);
     res.json({ success: true, deployId: data.id });
