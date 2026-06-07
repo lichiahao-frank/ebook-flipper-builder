@@ -76,7 +76,7 @@
     }
 
     /* ── Name input ── */
-    #book-name {
+    #book-name, #access-pw {
       width: 100%;
       background: rgba(255,255,255,0.06);
       border: 1px solid var(--border);
@@ -87,8 +87,8 @@
       outline: none;
       transition: border-color 0.2s;
     }
-    #book-name:focus  { border-color: var(--accent); }
-    #book-name::placeholder { color: var(--muted); }
+    #book-name:focus, #access-pw:focus  { border-color: var(--accent); }
+    #book-name::placeholder, #access-pw::placeholder { color: var(--muted); }
 
     /* ── Drop zone ── */
     #drop-zone {
@@ -368,10 +368,12 @@
     <p>上傳圖片 → 調整順序 → 一鍵部署，取得 Miro Embed 網址</p>
   </header>
 
-  <!-- Step 1: Book name -->
+  <!-- Step 1: Book name + access password -->
   <div class="card">
     <div class="card-label">書本名稱（用於網址）</div>
     <input id="book-name" type="text" placeholder="例如：my-photobook、2024-annual-report">
+    <div class="card-label" style="margin-top:16px">存取密碼</div>
+    <input id="access-pw" type="password" placeholder="請輸入存取密碼" autocomplete="off">
   </div>
 
   <!-- Step 2: Upload -->
@@ -581,6 +583,7 @@ async function deploy() {
 
     const formData = new FormData();
     formData.append('name', document.getElementById('book-name').value.trim());
+    formData.append('password', document.getElementById('access-pw').value);
     for (const item of items) {
       const file = fileMap.get(item);
       if (file) formData.append('images', file, file.name);

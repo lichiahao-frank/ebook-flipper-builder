@@ -97,6 +97,12 @@ app.post('/api/deploy', upload.array('images'), async (req, res) => {
   const files = req.files;
   if (!files?.length) return res.status(400).json({ error: '請至少上傳一張圖片' });
 
+  // 存取密碼閘門（密碼存於 BUILDER_PASSWORD 環境變數，不在程式碼中）
+  const required = (process.env.BUILDER_PASSWORD || '').trim();
+  if (required && (req.body.password || '').trim() !== required) {
+    return res.status(401).json({ error: '存取密碼錯誤，無法部署' });
+  }
+
   const auth = getVercelAuth();
   if (!auth?.token) return res.status(500).json({ error: '找不到 Vercel token，請先執行 vercel login' });
   const { token, teamId } = auth;

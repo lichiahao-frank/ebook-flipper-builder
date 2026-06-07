@@ -97,6 +97,13 @@ async function handler(req, res) {
   if (!Array.isArray(imageFiles)) imageFiles = [imageFiles];
   if (!imageFiles.length) return res.status(400).json({ error: '請至少上傳一張圖片' });
 
+  // 存取密碼閘門（密碼存於 BUILDER_PASSWORD 環境變數，不在程式碼中）
+  const required = (process.env.BUILDER_PASSWORD || '').trim();
+  const pw = Array.isArray(fields.password) ? fields.password[0] : (fields.password || '');
+  if (required && pw.trim() !== required) {
+    return res.status(401).json({ error: '存取密碼錯誤，無法部署' });
+  }
+
   const nameField   = Array.isArray(fields.name) ? fields.name[0] : (fields.name || '');
   const projectName = slugify(nameField) || `ebook-${Date.now()}`;
   const baseUrl     = 'https://' + projectName + '.vercel.app';
