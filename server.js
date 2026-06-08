@@ -8,7 +8,7 @@ const os       = require('os');
 const crypto   = require('crypto');
 const https    = require('https');
 const { exec } = require('child_process');
-const { flipbookHTML, slugify, oembedJSON } = require('./lib/template');
+const { flipbookHTML, slugify, oembedJSON, imageDims } = require('./lib/template');
 
 const app  = express();
 const PORT = 3456;
@@ -133,6 +133,8 @@ app.post('/api/deploy', upload.array('images'), async (req, res) => {
       const ext = (path.extname(f.originalname) || '.jpg').toLowerCase();
       return `page_${String(i + 1).padStart(3, '0')}${ext}`;
     });
+    // 依第一張圖的實際比例設定書頁與卡片，避免橫式圖被塞進直式頁產生白邊
+    const dims = imageDims(files[0].buffer) || { width: 595, height: 842 };
 
     const vercelJsonBuf = Buffer.from(JSON.stringify({
       headers: [{ source: '/(.*)', headers: [
@@ -167,7 +169,7 @@ app.post('/api/deploy', upload.array('images'), async (req, res) => {
 
     // 第一階段：先用「無網址版」部署，問出實際公開網址
     console.log('  🚀 第一階段部署（取得網址）…');
-    const htmlV1 = await uploadFile(Buffer.from(flipbookHTML(imageFilenames)), token, teamId)
+    const htmlV1 = await uploadFile(Buffer.from(flipbookHTML(imageFilenames, null, dims)), token, teamId)
       .then(r => ({ file: 'index.html', ...r }));
     const dep1 = await createDeployment([htmlV1]);
     const realUrl = await waitForPublicUrl(dep1.id, qs, token);
@@ -175,9 +177,9 @@ app.post('/api/deploy', upload.array('images'), async (req, res) => {
 
     // 第二階段：用真實網址重生 meta/oembed，重新部署（圖片沿用 SHA）
     console.log('  🚀 第二階段部署（寫入 oEmbed）…');
-    const htmlV2 = await uploadFile(Buffer.from(flipbookHTML(imageFilenames, realUrl)), token, teamId)
+    const htmlV2 = await uploadFile(Buffer.from(flipbookHTML(imageFilenames, realUrl, dims)), token, teamId)
       .then(r => ({ file: 'index.html', ...r }));
-    const oembedV2 = await uploadFile(Buffer.from(oembedJSON(realUrl, imageFilenames[0])), token, teamId)
+    const oembedV2 = await uploadFile(Buffer.from(oembedJSON(realUrl, imageFilenames[0], dims)), token, teamId)
       .then(r => ({ file: 'oembed.json', ...r }));
     const dep2 = await createDeployment([htmlV2, oembedV2]);
     console.log(`  ⏳ Deployment ${dep2.id} 建立中…`);
