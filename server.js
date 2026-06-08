@@ -68,15 +68,19 @@ function vercelAPI(method, apiPath, payload, token) {
 
 // ── 等待部署 READY 並回傳公開網址（最短別名＝乾淨正式網址） ──────
 async function waitForPublicUrl(deployId, qs, token) {
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 25; i++) {
     const { data } = await vercelAPI('GET', `/v13/deployments/${deployId}${qs}`, null, token);
     if (data.readyState === 'ERROR') throw new Error('第一階段部署失敗');
-    if (data.readyState === 'READY' && Array.isArray(data.alias) && data.alias.length) {
-      return 'https://' + data.alias.slice().sort((a, b) => a.length - b.length)[0];
+    // 公開網址＝不在 automaticAliases（team-scoped、受部署保護）裡的別名，
+    // 它在 readyState 變 READY 之後可能還要再幾秒才指派好，需要等它出現
+    const auto = data.automaticAliases || [];
+    const publics = (data.alias || []).filter(a => !auto.includes(a));
+    if (data.readyState === 'READY' && publics.length) {
+      return 'https://' + publics.sort((a, b) => a.length - b.length)[0];
     }
     await new Promise(r => setTimeout(r, 2000));
   }
-  throw new Error('等待部署網址逾時');
+  throw new Error('等待公開網址逾時');
 }
 
 // ── Upload one file ─────────────────────────────────────────────
