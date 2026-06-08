@@ -51,6 +51,20 @@ function vercelAPI(method, apiPath, payload, token) {
   });
 }
 
+// 等待部署 READY 並回傳「公開」網址（最短的別名＝乾淨的正式網址，不受部署保護）
+async function waitForPublicUrl(deployId, qs, token) {
+  for (let i = 0; i < 30; i++) {
+    const { data } = await vercelAPI('GET', `/v13/deployments/${deployId}${qs}`, null, token);
+    if (data.readyState === 'ERROR') throw new Error('第一階段部署失敗');
+    if (data.readyState === 'READY' && Array.isArray(data.alias) && data.alias.length) {
+      const host = data.alias.slice().sort((a, b) => a.length - b.length)[0];
+      return 'https://' + host;
+    }
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  throw new Error('等待部署網址逾時');
+}
+
 async function uploadFile(buffer, token, teamId) {
   const sha = crypto.createHash('sha1').update(buffer).digest('hex');
   const qs  = teamId ? `?teamId=${encodeURIComponent(teamId)}` : '';
@@ -106,7 +120,6 @@ async function handler(req, res) {
 
   const nameField   = Array.isArray(fields.name) ? fields.name[0] : (fields.name || '');
   const projectName = slugify(nameField) || `ebook-${Date.now()}`;
-  const baseUrl     = 'https://' + projectName + '.vercel.app';
 
   try {
     const imageFilenames = imageFiles.map((f, i) => {
@@ -120,12 +133,12 @@ async function handler(req, res) {
         { key: 'Content-Security-Policy', value: 'frame-ancestors *' },
       ]}],
     }));
-    const htmlBuf   = Buffer.from(flipbookHTML(imageFilenames, baseUrl));
-    const oembedBuf = Buffer.from(oembedJSON(baseUrl, imageFilenames[0]));
 
-    const uploadResults = await Promise.all([
-      uploadFile(htmlBuf,       token, teamId).then(r => ({ file: 'index.html',  ...r })),
-      uploadFile(oembedBuf,     token, teamId).then(r => ({ file: 'oembed.json', ...r })),
+    const qs = teamId ? `?teamId=${teamId}` : '';
+    const projectSettings = { framework: null, buildCommand: null, outputDirectory: null, installCommand: null };
+
+    // 共用檔案：圖片 + vercel.json（兩階段沿用同一份 SHA，第二次不必重傳）
+    const sharedFiles = await Promise.all([
       uploadFile(vercelJsonBuf, token, teamId).then(r => ({ file: 'vercel.json', ...r })),
       ...imageFiles.map((f, i) =>
         uploadFile(fs.readFileSync(f.filepath), token, teamId)
@@ -133,19 +146,32 @@ async function handler(req, res) {
       ),
     ]);
 
-    const qs = teamId ? `?teamId=${teamId}` : '';
-    const { status, data } = await vercelAPI('POST', `/v13/deployments${qs}`, {
-      name: projectName,
-      files: uploadResults,
-      target: 'production',
-      projectSettings: { framework: null, buildCommand: null, outputDirectory: null, installCommand: null },
-    }, token);
-
-    if (status === 401 || status === 403) {
-      throw new Error(`Vercel token 已失效或權限不足 (HTTP ${status})，請更新 VERCEL_DEPLOY_TOKEN 環境變數`);
+    async function createDeployment(extraFiles) {
+      const { status, data } = await vercelAPI('POST', `/v13/deployments${qs}`, {
+        name: projectName, files: [...sharedFiles, ...extraFiles],
+        target: 'production', projectSettings,
+      }, token);
+      if (status === 401 || status === 403) {
+        throw new Error(`Vercel token 已失效或權限不足 (HTTP ${status})，請更新 VERCEL_DEPLOY_TOKEN 環境變數`);
+      }
+      if (status >= 400) throw new Error(`Deployment failed (${status}): ${JSON.stringify(data)}`);
+      return data;
     }
-    if (status >= 400) throw new Error(`Deployment failed (${status}): ${JSON.stringify(data)}`);
-    res.json({ success: true, deployId: data.id });
+
+    // 第一階段：先用「無網址版」部署，問出實際公開網址
+    const htmlV1 = await uploadFile(Buffer.from(flipbookHTML(imageFilenames)), token, teamId)
+      .then(r => ({ file: 'index.html', ...r }));
+    const dep1 = await createDeployment([htmlV1]);
+    const realUrl = await waitForPublicUrl(dep1.id, qs, token);
+
+    // 第二階段：用真實網址重生 meta/oembed，重新部署（圖片沿用 SHA）
+    const htmlV2 = await uploadFile(Buffer.from(flipbookHTML(imageFilenames, realUrl)), token, teamId)
+      .then(r => ({ file: 'index.html', ...r }));
+    const oembedV2 = await uploadFile(Buffer.from(oembedJSON(realUrl, imageFilenames[0])), token, teamId)
+      .then(r => ({ file: 'oembed.json', ...r }));
+    const dep2 = await createDeployment([htmlV2, oembedV2]);
+
+    res.json({ success: true, deployId: dep2.id, url: realUrl });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
